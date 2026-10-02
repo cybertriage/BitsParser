@@ -1,0 +1,88 @@
+# Builds the BitsParser.exe that Cyber Triage ships: a PyInstaller one-file build
+# for Windows x64 on Python 3.11.9, from the packages pinned in requirements.txt and
+# requirements-build.txt. Every run keeps the exe as a workflow artifact. Pushing a
+# ct-* tag also publishes it, with SHA256SUMS, as a GitHub release. See ct/README.md.
+name: ct_release
+on:
+  push:
+    branches:
+    - master
+    tags:
+    - 'ct-*'
+  pull_request:
+    branches:
+    - master
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build_windows:
+    runs-on: windows-2022
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        # The last 3.11 release with a Windows installer; 3.11 keeps the Windows 8.1 floor.
+        python-version: '3.11.9'
+        architecture: x64
+    - name: Name the build
+      id: name
+      shell: bash
+      run: |
+        if [ "${GITHUB_REF_TYPE}" = "tag" ]; then NAME="${GITHUB_REF_NAME}"; else NAME="$(git rev-parse --short=12 HEAD)"; fi
+        echo "package=BitsParser-${NAME}-windows-x64" >> "${GITHUB_OUTPUT}"
+    - name: Install build dependencies
+      run: |
+        python -m pip install --disable-pip-version-check -r requirements-build.txt
+        If (${LASTEXITCODE} -ne 0) { Exit 1 }
+    - name: Build
+      run: |
+        pyinstaller --onefile --clean --noconfirm --distpath build\dist --workpath build\work BitsParser.py
+        If (${LASTEXITCODE} -ne 0) { Exit 1 }
+    - name: Run smoke test
+      run: |
+        python ct\smoke_test.py build\dist\BitsParser.exe
+    - name: Package
+      env:
+        PACKAGE: ${{ steps.name.outputs.package }}
+      run: |
+        New-Item -ItemType Directory -Path "dist\${Env:PACKAGE}" | Out-Null
+        Copy-Item -Path build\dist\BitsParser.exe, LICENSE, Apache-1.1-Impacket.txt, requirements.txt, requirements-build.txt -Destination "dist\${Env:PACKAGE}"
+        @(
+          "BitsParser.exe, a PyInstaller one-file build of BitsParser for Cyber Triage."
+          "Source:  ${Env:GITHUB_SERVER_URL}/${Env:GITHUB_REPOSITORY}/tree/${Env:GITHUB_SHA}"
+          "Build:   ${Env:GITHUB_SERVER_URL}/${Env:GITHUB_REPOSITORY}/actions/runs/${Env:GITHUB_RUN_ID}"
+          "Python:  $(python --version)"
+          "Licence: Apache-2.0, see LICENSE; ese/ is from Impacket, see Apache-1.1-Impacket.txt."
+          "Bundled packages: see requirements.txt and requirements-build.txt."
+        ) | Set-Content -Path "dist\${Env:PACKAGE}\SOURCE.txt" -Encoding ascii
+        Compress-Archive -Path "dist\${Env:PACKAGE}" -DestinationPath "dist\${Env:PACKAGE}.zip"
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ steps.name.outputs.package }}
+        path: dist/${{ steps.name.outputs.package }}.zip
+        if-no-files-found: error
+  release:
+    if: github.ref_type == 'tag'
+    needs:
+    - build_windows
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        path: dist
+        merge-multiple: true
+    - name: Publish the release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        cd dist
+        sha256sum -- * > SHA256SUMS
+        cat SHA256SUMS
+        gh release create "${GITHUB_REF_NAME}" \
+          --repo "${GITHUB_REPOSITORY}" \
+          --title "${GITHUB_REF_NAME}" \
+          --notes "BitsParser.exe for Cyber Triage, built from ${GITHUB_SHA}. See ct/README.md for what differs from upstream BitsParser." \
+          -- *
