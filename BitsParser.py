@@ -50,12 +50,13 @@ WIN10_JOB_DELIMITERS = [
 
 class BitsParser:
 
-    def __init__(self, queue_dir, carve_db, carve_all, out_file):
+    def __init__(self, queue_dir, carve_db, carve_all, out_file, sid_lookup=True):
 
         self.queue_dir = queue_dir
         self.carve_db_files = carve_db
         self.carve_all_files = carve_all
         self.out_file = out_file
+        self.sid_lookup = sid_lookup
 
         self.sid_user_cache = {}
         self.visited_jobs = set()
@@ -65,6 +66,10 @@ class BitsParser:
 
     def get_username_from_sid(self, sid):
         """ Returns the username associated with the given SID by calling LookupAccountSid """
+
+        # The lookup runs against the accounts of this machine, not the one the database came from
+        if not self.sid_lookup:
+            return None
 
         # Cache usernames to improve efficiency with repeated lookups
         if sid in self.sid_user_cache:
@@ -350,6 +355,35 @@ class BitsParser:
                 sys.stdout = orig_stdout
 
 
+    def output_jobs_properjson(self, file_path, jobs):
+        """Cleans up and outputs the parsed jobs from the qmgr database files"""
+
+        # If an output file is specified, open it and use it instead of stdout
+        if self.out_file:
+            orig_stdout = sys.stdout
+            sys.stdout = open(self.out_file, "w")
+
+        try:
+            uniquejobs = []
+            for job in jobs:
+                # Skip incomplete carved jobs as they do not contain useful info
+                if job.is_carved() and not job.is_useful_for_analysis():
+                    continue
+
+                # Output unique jobs
+                if job.hash not in self.visited_jobs:
+                    uniquejobs.append(job)
+                    self.visited_jobs.add(job.hash)
+
+            results = [j.job_dict for j in uniquejobs]
+            jobsJson = json.dumps({"jobs" : results}, indent=4)
+            print(jobsJson)
+        finally:
+            if self.out_file:
+                sys.stdout.close()
+                sys.stdout = orig_stdout
+
+
     def process_file(self, file_path):
         """ Processes the given BITS file.  Attempts to find/parse jobs. """
 
@@ -374,7 +408,7 @@ class BitsParser:
                 else:
                     jobs = self.load_non_qmgr_jobs(file_data)
 
-            self.output_jobs(file_path, jobs)
+            self.output_jobs_properjson(file_path, jobs)
 
         except Exception:
             print(f'Exception occurred processing file {file_path}: ' + traceback.format_exc(), file=sys.stderr)
@@ -564,8 +598,10 @@ if __name__ == '__main__':
     parser.add_argument('--output', '-o', help='Optionally specify a file for JSON output.  If not specified the output will be printed to stdout.')
     parser.add_argument('--carvedb', action='store_true', help='Carve deleted records from database files')
     parser.add_argument('--carveall', action='store_true', help='Carve deleted records from all other files')
+    parser.add_argument('--no-sid-lookup', action='store_true', help='Do not resolve owner SIDs to account names on this machine (no "Owner" field)')
     parsed_args = parser.parse_args()
 
     queue_dir = os.path.expandvars(parsed_args.input)
-    bits_parser = BitsParser(queue_dir, parsed_args.carvedb, parsed_args.carveall, parsed_args.output)
+    bits_parser = BitsParser(queue_dir, parsed_args.carvedb, parsed_args.carveall, parsed_args.output,
+                             sid_lookup=not parsed_args.no_sid_lookup)
     bits_parser.run()

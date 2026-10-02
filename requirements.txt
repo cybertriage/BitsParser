@@ -1,1 +1,1 @@
-bits_parser
+bits_parser @ git+https://github.com/ANSSI-FR/bits_parser@5755dff9d69fafa2defbf0dd3f81ae43826bad2d
