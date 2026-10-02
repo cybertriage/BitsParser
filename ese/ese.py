@@ -397,6 +397,9 @@ class ESENT_PAGE:
         self.record = None
         if data is not None:
             self.record = ESENT_PAGE_HEADER(self.__DBHeader['Version'], self.__DBHeader['FileFormatRevision'], self.__DBHeader['PageSize'], data)
+            # From format 0x620 revision 0x122 the upper 4 bits of the tag count are reserved
+            if self.__DBHeader['Version'] == 0x620 and self.__DBHeader['FileFormatRevision'] >= 0x122:
+                self.record['FirstAvailablePageTag'] &= 0x0fff
 
     def getTag(self, tagNum):
         """Gets the next tag from this page"""
@@ -640,8 +643,12 @@ class ESENT_DB:
         cursor['CurrentPageData'] = page
         cursor['CurrentTag']  = 0
 
-        # Create a mapping of the long values tree
-        cursor['LongValues'] = self.__getLongValues(cursor['TableData']['LongValues']['FatherDataPageNumber'])
+        # Create a mapping of the long values tree (a table that never stored a long value has none)
+        longValues = cursor['TableData']['LongValues']
+        if isinstance(longValues, OrderedDict):
+            cursor['LongValues'] = {}
+        else:
+            cursor['LongValues'] = self.__getLongValues(longValues['FatherDataPageNumber'])
 
         return cursor
 

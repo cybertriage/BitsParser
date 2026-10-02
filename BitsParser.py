@@ -350,6 +350,35 @@ class BitsParser:
                 sys.stdout = orig_stdout
 
 
+    def output_jobs_properjson(self, file_path, jobs):
+        """Cleans up and outputs the parsed jobs from the qmgr database files"""
+
+        # If an output file is specified, open it and use it instead of stdout
+        if self.out_file:
+            orig_stdout = sys.stdout
+            sys.stdout = open(self.out_file, "w")
+
+        try:
+            uniquejobs = []
+            for job in jobs:
+                # Skip incomplete carved jobs as they do not contain useful info
+                if job.is_carved() and not job.is_useful_for_analysis():
+                    continue
+
+                # Output unique jobs
+                if job.hash not in self.visited_jobs:
+                    uniquejobs.append(job)
+                    self.visited_jobs.add(job.hash)
+
+            results = [j.job_dict for j in uniquejobs]
+            jobsJson = json.dumps({"jobs" : results}, indent=4)
+            print(jobsJson)
+        finally:
+            if self.out_file:
+                sys.stdout.close()
+                sys.stdout = orig_stdout
+
+
     def process_file(self, file_path):
         """ Processes the given BITS file.  Attempts to find/parse jobs. """
 
@@ -374,7 +403,7 @@ class BitsParser:
                 else:
                     jobs = self.load_non_qmgr_jobs(file_data)
 
-            self.output_jobs(file_path, jobs)
+            self.output_jobs_properjson(file_path, jobs)
 
         except Exception:
             print(f'Exception occurred processing file {file_path}: ' + traceback.format_exc(), file=sys.stderr)
