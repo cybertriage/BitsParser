@@ -55,9 +55,11 @@ def main():
             with open(out, encoding="utf-8") as file_object:
                 document = json.load(file_object)
         print(f"zero-filled file: exit code {exit_code}, output {document}")
-        if exit_code != 0 or document != {"jobs": []}:
+        # Cyber Triage reports an unreadable database from the exit code
+        if exit_code != 1 or document is not None:
             failures.append(
-                f'a zero-filled file gave {document}, expected {{"jobs": []}}'
+                f"a zero-filled file gave exit code {exit_code} and {document}, "
+                "expected exit code 1 and no output"
             )
 
     # pyi-archive_viewer, from the PyInstaller that runs this script.

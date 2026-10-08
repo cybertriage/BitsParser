@@ -57,6 +57,8 @@ class BitsParser:
         self.carve_all_files = carve_all
         self.out_file = out_file
         self.sid_lookup = sid_lookup
+        # Set when a file could not be read, so the exit code reports it
+        self.failed = False
 
         self.sid_user_cache = {}
         self.visited_jobs = set()
@@ -384,7 +386,7 @@ class BitsParser:
                 sys.stdout = orig_stdout
 
 
-    def process_file(self, file_path):
+    def process_file(self, file_path, named_directly=False):
         """ Processes the given BITS file.  Attempts to find/parse jobs. """
 
         try:
@@ -408,10 +410,17 @@ class BitsParser:
                 else:
                     jobs = self.load_non_qmgr_jobs(file_data)
 
+            # A directory also holds ESE logs and checkpoints, so only a file named directly is an error
+            elif named_directly:
+                print(f'{file_path} is not a recognized BITS database', file=sys.stderr)
+                self.failed = True
+                return
+
             self.output_jobs_properjson(file_path, jobs)
 
         except Exception:
             print(f'Exception occurred processing file {file_path}: ' + traceback.format_exc(), file=sys.stderr)
+            self.failed = True
 
 
     def determine_directory_architecture(self, path):
@@ -427,7 +436,7 @@ class BitsParser:
 
         # If the queue "directory" is a file, just process the file
         if os.path.isfile(self.queue_dir):
-            self.process_file(self.queue_dir)
+            self.process_file(self.queue_dir, named_directly=True)
             return
 
         # Determine if the directory appears to belong to a Windows 10 system or an older system for carving
@@ -605,3 +614,4 @@ if __name__ == '__main__':
     bits_parser = BitsParser(queue_dir, parsed_args.carvedb, parsed_args.carveall, parsed_args.output,
                              sid_lookup=not parsed_args.no_sid_lookup)
     bits_parser.run()
+    sys.exit(1 if bits_parser.failed else 0)

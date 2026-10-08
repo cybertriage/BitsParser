@@ -19,6 +19,9 @@ Work happens on `master`. Upstream is
   that has the XP job delimiter the PyPI release lacks.
 - **`--no-sid-lookup`.** Writes only `OwnerSID`, without resolving it against
   the accounts of the machine running BitsParser. Cyber Triage passes it.
+- **Failure exit code.** Exits 1, without writing output, when a file named by
+  `-i` is not a recognized BITS database or cannot be parsed. Cyber Triage
+  reports that exit code as a host analysis issue.
 - **Pinned build.** `requirements-build.txt` pins PyInstaller and its
   dependencies, and `.github/workflows/ct_release.yml` builds the exe.
 
