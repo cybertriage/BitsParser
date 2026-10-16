@@ -1,7 +1,8 @@
-# Builds the BitsParser.exe that Cyber Triage ships: a PyInstaller one-file build
-# for Windows x64 on Python 3.11.9, from the packages pinned in requirements.txt and
-# requirements-build.txt. Every run keeps the exe as a workflow artifact. Pushing a
-# ct-* tag also publishes it, with SHA256SUMS, as a GitHub release. See ct/README.md.
+# Builds the BitsParser executables that Cyber Triage ships: PyInstaller one-file
+# builds for Windows x64 on Python 3.11.9 and for Linux x86-64 on Python 3.11, from
+# the packages pinned in requirements.txt and requirements-build.txt. Every run keeps
+# them as workflow artifacts. Pushing a ct-* tag also publishes them, with SHA256SUMS,
+# as a GitHub release. See ct/README.md.
 name: ct_release
 on:
   push:
@@ -62,10 +63,61 @@ jobs:
         name: ${{ steps.name.outputs.package }}
         path: dist/${{ steps.name.outputs.package }}.zip
         if-no-files-found: error
+  build_linux:
+    runs-on: ubuntu-24.04
+    # AlmaLinux 8 is a RHEL 8 rebuild with glibc 2.28, the oldest glibc of any Linux still
+    # in support. Everything the exe bundles comes from it, so the exe runs on RHEL 8 and
+    # every newer distro.
+    container: almalinux:8
+    steps:
+    - name: Install build tools
+      # git before checkout, so checkout clones the repository, and for the bits_parser pin
+      # in requirements.txt. PyInstaller needs objdump and objcopy from binutils.
+      run: |
+        dnf -y install binutils git gzip python3.11 python3.11-pip tar
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - name: Name the build
+      id: name
+      # GITHUB_SHA is the commit checked out. It avoids running git on a workspace the
+      # container's root user does not own.
+      run: |
+        if [ "${GITHUB_REF_TYPE}" = "tag" ]; then NAME="${GITHUB_REF_NAME}"; else NAME="${GITHUB_SHA::12}"; fi
+        echo "package=BitsParser-${NAME}-linux-x86_64" >> "${GITHUB_OUTPUT}"
+    - name: Install build dependencies
+      run: |
+        python3.11 -m pip install --disable-pip-version-check -r requirements-build.txt
+    - name: Build
+      run: |
+        python3.11 -m PyInstaller --onefile --clean --noconfirm --distpath build/dist --workpath build/work BitsParser.py
+    - name: Run smoke test
+      run: |
+        python3.11 ct/smoke_test.py build/dist/BitsParser
+    - name: Package
+      env:
+        PACKAGE: ${{ steps.name.outputs.package }}
+      run: |
+        mkdir -p "dist/${PACKAGE}"
+        cp build/dist/BitsParser LICENSE Apache-1.1-Impacket.txt requirements.txt requirements-build.txt "dist/${PACKAGE}/"
+        {
+          echo "BitsParser, a PyInstaller one-file build of BitsParser for Cyber Triage."
+          echo "Source:  ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/tree/${GITHUB_SHA}"
+          echo "Build:   ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          echo "Python:  $(python3.11 --version)"
+          echo "Runs on: x86-64 Linux with glibc 2.28 or later."
+          echo "Licence: Apache-2.0, see LICENSE; ese/ is from Impacket, see Apache-1.1-Impacket.txt."
+          echo "Bundled packages: see requirements.txt and requirements-build.txt."
+        } > "dist/${PACKAGE}/SOURCE.txt"
+        tar -czf "dist/${PACKAGE}.tar.gz" -C dist "${PACKAGE}"
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ steps.name.outputs.package }}
+        path: dist/${{ steps.name.outputs.package }}.tar.gz
+        if-no-files-found: error
   release:
     if: github.ref_type == 'tag'
     needs:
     - build_windows
+    - build_linux
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -84,5 +136,5 @@ jobs:
         gh release create "${GITHUB_REF_NAME}" \
           --repo "${GITHUB_REPOSITORY}" \
           --title "${GITHUB_REF_NAME}" \
-          --notes "BitsParser.exe for Cyber Triage, built from ${GITHUB_SHA}. See ct/README.md for what differs from upstream BitsParser." \
+          --notes "BitsParser for Cyber Triage, for Windows and Linux, built from ${GITHUB_SHA}. See ct/README.md for what differs from upstream BitsParser." \
           -- *
