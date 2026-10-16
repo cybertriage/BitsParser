@@ -1,7 +1,8 @@
 # BitsParser for Cyber Triage
 
-This fork builds the `BitsParser.exe` that Cyber Triage runs to parse the BITS
-job database (`qmgr.db`, and `qmgr0.dat`/`qmgr1.dat` on older Windows).
+This fork builds the BitsParser executables, for Windows and Linux, that Cyber
+Triage runs to parse the BITS job database (`qmgr.db`, and
+`qmgr0.dat`/`qmgr1.dat` on older Windows).
 
 Work happens on `master`. Upstream is
 [fireeye/BitsParser](https://github.com/fireeye/BitsParser), unchanged since
@@ -18,14 +19,16 @@ Work happens on `master`. Upstream is
   [ANSSI-FR/bits_parser](https://github.com/ANSSI-FR/bits_parser) to a commit
   that has the XP job delimiter the PyPI release lacks.
 - **`--no-sid-lookup`.** Writes only `OwnerSID`, without resolving it against
-  the accounts of the machine running BitsParser. Cyber Triage passes it.
+  the accounts of the machine running BitsParser. Cyber Triage passes it. The
+  lookup only works on Windows. On Linux, without this option, each SID prints
+  a warning to stderr.
 - **Failure exit code.** Exits 1, without writing output, when a file named by
   `-i` is not a recognized BITS database or cannot be parsed. Cyber Triage
   reports that exit code as a host analysis issue.
 - **Pinned build.** `requirements-build.txt` pins PyInstaller and its
-  dependencies, and `.github/workflows/ct_release.yml` builds the exe.
+  dependencies, and `.github/workflows/ct_release.yml` builds the executables.
 
-## Getting the exe
+## Getting the executables
 
 Do not build locally. Download a release from this repository's Releases page.
 Each release has:
@@ -33,15 +36,24 @@ Each release has:
 | File | Contents |
 |---|---|
 | `BitsParser-<tag>-windows-x64.zip` | `BitsParser.exe`, a PyInstaller one-file build |
-| `SHA256SUMS` | SHA-256 of the archive |
+| `BitsParser-<tag>-linux-x86_64.tar.gz` | `BitsParser`, a PyInstaller one-file build |
+| `SHA256SUMS` | SHA-256 of both archives |
 
-The archive also carries `LICENSE`, `Apache-1.1-Impacket.txt`, both
+Both archives also carry `LICENSE`, `Apache-1.1-Impacket.txt`, both
 requirements files and a `SOURCE.txt` naming the exact source commit and build.
 
-The exe bundles Python 3.11 and its C runtime, so it needs nothing installed.
+The Windows exe bundles Python 3.11 and its C runtime, so it needs nothing
+installed.
 
-Every push to `master` builds the same archive and keeps it as a workflow
-artifact for the run. Only a tag publishes a release.
+The Linux exe bundles Python 3.11 and everything else except glibc. It is built
+on AlmaLinux 8, so it runs on x86-64 Linux with glibc 2.28 or later: RHEL 8 and
+its rebuilds, and every newer distro. glibc 2.28 is the oldest of any Linux
+still in support. It does not run on distros that use musl instead of glibc,
+such as Alpine. The smoke test fails the build if anything in it needs a newer
+glibc.
+
+Every push to `master` builds the same archives and keeps them as workflow
+artifacts for the run. Only a tag publishes a release.
 
 ## Making a release
 
